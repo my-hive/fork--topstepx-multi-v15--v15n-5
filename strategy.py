@@ -1,27 +1,40 @@
-"""Causal baseline, optional symbols. No requirement to manufacture market diversity.
-Slow 20-bar momentum, entries after 10:00 CT, flat at 14:00. Not claimed profitable.
-"""
+"""Causal intraday opening-range extension fade on ZN."""
 import numpy as np
 
-
-def entry_risk(panel):
-    return {symbol: np.zeros(len(df)) for symbol, df in panel.items()}
+PARAMS = {"range_minutes": 30, "entry_start": 37800, "entry_end": 45000, "z_multiple": 1.5, "risk": 250}
 
 
 def signals(panel):
     result = {}
     for symbol, df in panel.items():
-        out = np.zeros(len(df), dtype=np.int64)
-        # Two micros only, at most 0.2 standard equivalents total.
-        if symbol not in ('MES', 'MGC'):
-            result[symbol] = out
+        target = np.zeros(len(df), dtype=np.int64)
+        if symbol != "ZN":
+            result[symbol] = target
             continue
-        for indices in df.groupby('session', sort=False).indices.values():
-            close = df.close.to_numpy()[indices]
-            sec = df.ct_sec.to_numpy()[indices]
-            # Rolling mean excludes future rows; warmup restarts each session.
-            for j in range(20, len(indices)):
-                if 36000 <= sec[j] < 50400:
-                    out[indices[j]] = int(np.sign(close[j] - close[j-20:j].mean()))
-        result[symbol] = out
+        close = df.close.to_numpy()
+        high = df.high.to_numpy()
+        low = df.low.to_numpy()
+        sec = df.ct_sec.to_numpy()
+        for indices in df.groupby("session", sort=False).indices.values():
+            n = len(indices)
+            for j in range(PARAMS["range_minutes"], n):
+                i = indices[j]
+                if not PARAMS["entry_start"] <= sec[i] < PARAMS["entry_end"]:
+                    continue
+                prior = indices[:j]
+                opening = prior[sec[prior] < 36000]
+                if len(opening) < PARAMS["range_minutes"]:
+                    continue
+                upper = high[opening].max()
+                lower = low[opening].min()
+                width = upper - lower
+                if width and close[i] > upper + PARAMS["z_multiple"] * width:
+                    target[i] = -1
+                elif width and close[i] < lower - PARAMS["z_multiple"] * width:
+                    target[i] = 1
+        result[symbol] = target
     return result
+
+
+def entry_risk(panel):
+    return {symbol: np.full(len(df), PARAMS["risk"], dtype=float) for symbol, df in panel.items()}
