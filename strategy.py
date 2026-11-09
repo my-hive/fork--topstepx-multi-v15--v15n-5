@@ -1,16 +1,21 @@
-"""Causal ES intraday directional drift, entered at midnight CT and flat by EOD."""
+"""Causal 6E morning momentum, holding while prior hour direction persists."""
 import numpy as np
 
-PARAMS = {"entry_sec": 0, "exit_sec": 54000, "risk": 250}
+PARAMS = {"lookback": 60, "start_sec": 34200, "end_sec": 50400, "risk": 250}
 
 
 def signals(panel):
     result = {}
     for symbol, df in panel.items():
         out = np.zeros(len(df), dtype=np.int64)
-        if symbol == "ES":
+        if symbol == "6E":
+            close = df.close.to_numpy()
             sec = df.ct_sec.to_numpy()
-            out[(sec >= PARAMS["entry_sec"]) & (sec < PARAMS["exit_sec"])] = 1
+            for indices in df.groupby("session", sort=False).indices.values():
+                for j in range(PARAMS["lookback"], len(indices)):
+                    i = indices[j]
+                    if PARAMS["start_sec"] <= sec[i] < PARAMS["end_sec"]:
+                        out[i] = int(np.sign(close[i] - close[indices[j - PARAMS["lookback"]]]))
         result[symbol] = out
     return result
 
