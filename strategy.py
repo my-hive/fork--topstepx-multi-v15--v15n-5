@@ -1,38 +1,17 @@
-"""Causal intraday opening-range extension fade on ZN."""
+"""Causal ES intraday directional drift, entered at midnight CT and flat by EOD."""
 import numpy as np
 
-PARAMS = {"range_minutes": 30, "entry_start": 37800, "entry_end": 45000, "z_multiple": 1.5, "risk": 250}
+PARAMS = {"entry_sec": 0, "exit_sec": 54000, "risk": 250}
 
 
 def signals(panel):
     result = {}
     for symbol, df in panel.items():
-        target = np.zeros(len(df), dtype=np.int64)
-        if symbol != "ZN":
-            result[symbol] = target
-            continue
-        close = df.close.to_numpy()
-        high = df.high.to_numpy()
-        low = df.low.to_numpy()
-        sec = df.ct_sec.to_numpy()
-        for indices in df.groupby("session", sort=False).indices.values():
-            n = len(indices)
-            for j in range(PARAMS["range_minutes"], n):
-                i = indices[j]
-                if not PARAMS["entry_start"] <= sec[i] < PARAMS["entry_end"]:
-                    continue
-                prior = indices[:j]
-                opening = prior[sec[prior] < 36000]
-                if len(opening) < PARAMS["range_minutes"]:
-                    continue
-                upper = high[opening].max()
-                lower = low[opening].min()
-                width = upper - lower
-                if width and close[i] > upper + PARAMS["z_multiple"] * width:
-                    target[i] = -1
-                elif width and close[i] < lower - PARAMS["z_multiple"] * width:
-                    target[i] = 1
-        result[symbol] = target
+        out = np.zeros(len(df), dtype=np.int64)
+        if symbol == "ES":
+            sec = df.ct_sec.to_numpy()
+            out[(sec >= PARAMS["entry_sec"]) & (sec < PARAMS["exit_sec"])] = 1
+        result[symbol] = out
     return result
 
 
